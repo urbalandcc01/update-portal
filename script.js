@@ -2,6 +2,7 @@ const API = "https://script.google.com/macros/s/AKfycbzNbXUntOMdd3fXlT-HqUumMMvH
 
 let updates = [];
 let reads = [];
+let currentUser = null;
 
 async function loadData(){
   try{
@@ -17,8 +18,8 @@ async function loadData(){
     console.log(error);
   }
 }
-function login(){
 
+function login(){
   const user = document.getElementById("userInput").value.trim();
 
   if(!user){
@@ -29,15 +30,14 @@ function login(){
   fetch(API)
     .then(res => res.json())
     .then(data => {
-
       const users = data.users.slice(1);
 
       const found = users.find(
-  u => u[0].toString().trim().toLowerCase() === user.toLowerCase()
-);
+        u => u[0].toString().trim().toLowerCase() === user.toLowerCase()
+      );
 
       if(found){
-
+        currentUser = user;
         localStorage.setItem("user", user);
 
         document.getElementById("loginPage").style.display = "none";
@@ -46,24 +46,18 @@ function login(){
         loadData();
 
       }else{
-
         alert("Invalid User ID");
-
       }
 
+    })
+    .catch(error => {
+      console.log(error);
+      alert("Login failed. Please try again.");
     });
-
-}
-
-  localStorage.setItem("user", user);
-
-  document.getElementById("loginPage").style.display = "none";
-  document.getElementById("dashboard").style.display = "block";
-
-  loadData();
 }
 
 function logout(){
+  currentUser = null;
   localStorage.removeItem("user");
   location.reload();
 }
@@ -87,13 +81,16 @@ function renderUpdates(){
   left.innerHTML = "";
   right.innerHTML = "";
 
-  [...updates].reverse().forEach(update=>{
+  [...updates].reverse().forEach((update, index)=>{
 
     if(!update[1].toLowerCase().includes(search)) return;
 
+    // Check if already read
+    const isRead = reads.some(r => r[0] === update[1] && r[1] === currentUser);
+
     const card = document.createElement("div");
 
-    card.className = "card unread";
+    card.className = isRead ? "card read" : "card unread";
 
     card.innerHTML = `
       <h2>${update[1]}</h2>
@@ -102,7 +99,7 @@ function renderUpdates(){
       <small>Priority: ${update[4]}</small><br><br>
 
       <label>
-        <input class="checkbox" type="checkbox" onchange="markRead(this)">
+        <input class="checkbox" type="checkbox" ${isRead ? 'checked' : ''} onchange="markRead(this, '${update[1].replace(/'/g, "\\'")}')">
         Mark as Read
       </label>
     `;
@@ -128,8 +125,57 @@ function renderUpdates(){
   });
 }
 
-function markRead(el){
-  el.parentElement.parentElement.classList.remove("unread");
+function markRead(el, updateTitle){
+  const isChecked = el.checked;
+  
+  // Update UI immediately
+  el.parentElement.parentElement.classList.toggle("unread", !isChecked);
+  el.parentElement.parentElement.classList.toggle("read", isChecked);
+
+  // Send to Google Sheet
+  const timestamp = new Date().toLocaleString('en-US', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true
+  });
+
+  fetch(API, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      action: 'markRead',
+      updateTitle: updateTitle,
+      user: currentUser,
+      readTime: timestamp
+    })
+  })
+  .then(res => res.json())
+  .then(data => {
+    console.log('Mark read response:', data);
+    
+    // Update local reads array
+    if(isChecked){
+      // Add to reads
+      reads.push([updateTitle, currentUser, timestamp]);
+    } else {
+      // Remove from reads
+      reads = reads.filter(r => !(r[0] === updateTitle && r[1] === currentUser));
+    }
+  })
+  .catch(error => {
+    console.error('Error marking read:', error);
+    alert('Failed to update status. Please try again.');
+    // Revert UI on error
+    el.checked = !isChecked;
+    el.parentElement.parentElement.classList.toggle("unread");
+    el.parentElement.parentElement.classList.toggle("read");
+  });
 }
 
 if(localStorage.getItem("theme") === "light"){
@@ -137,6 +183,7 @@ if(localStorage.getItem("theme") === "light"){
 }
 
 if(localStorage.getItem("user")){
+  currentUser = localStorage.getItem("user");
   document.getElementById("loginPage").style.display = "none";
   document.getElementById("dashboard").style.display = "block";
 
