@@ -1,4 +1,4 @@
-const API = "https://script.google.com/macros/s/AKfycbyX2ErjjnMXFEM-oZeEkj3GJo3c7IS20R-1v8qJSecf7qT0nHrFKdPDvph0CPkSQSu5FA/exec";
+const API = "https://script.google.com/macros/s/AKfycbzNbXUntOMdd3fXlT-HqUumMMvHOrX47_O_wKNT1a8GKfumBBRJnbRjP6ok2Pxd41OrWQ/exec";
 
 let updates = [];
 let reads = [];
@@ -30,11 +30,26 @@ function login(){
   fetch(API)
     .then(res => res.json())
     .then(data => {
-      const users = data.users.slice(1);
+      // Debug: log raw users for diagnosis (can remove later)
+      console.log('Login: users raw:', data.users);
 
-      const found = users.find(
-        u => u[0].toString().trim().toLowerCase() === user.toLowerCase()
-      );
+      const usersRaw = data.users || [];
+      const users = Array.isArray(usersRaw) && usersRaw.length && Array.isArray(usersRaw[0]) ? usersRaw.slice(1) : usersRaw;
+
+      const normalize = v => String(v || '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+      const found = users.find(u => {
+        // support both array rows like [id, name...] and objects like {id:..., name:...}
+        let candidate = '';
+        if (Array.isArray(u)) {
+          candidate = u[0];
+        } else if (u && typeof u === 'object') {
+          candidate = u.id ?? u.userId ?? u.employeeId ?? u[0] ?? '';
+        } else {
+          candidate = u;
+        }
+        return normalize(candidate) === normalize(user);
+      });
 
       if(found){
         currentUser = user;
@@ -126,6 +141,13 @@ function renderUpdates(){
 }
 
 function markRead(el, updateTitle){
+  if(!currentUser){
+    alert('No user is logged in. Please login first.');
+    // revert checkbox
+    el.checked = !el.checked;
+    return;
+  }
+
   const isChecked = el.checked;
   
   // Update UI immediately
@@ -182,10 +204,46 @@ if(localStorage.getItem("theme") === "light"){
   document.body.classList.add("light");
 }
 
+// Validate stored user on load instead of trusting localStorage blindly
 if(localStorage.getItem("user")){
-  currentUser = localStorage.getItem("user");
-  document.getElementById("loginPage").style.display = "none";
-  document.getElementById("dashboard").style.display = "block";
+  const stored = localStorage.getItem("user");
+  // Verify against API
+  fetch(API)
+    .then(res => res.json())
+    .then(data => {
+      const usersRaw = data.users || [];
+      const users = Array.isArray(usersRaw) && usersRaw.length && Array.isArray(usersRaw[0]) ? usersRaw.slice(1) : usersRaw;
+      const normalize = v => String(v || '').replace(/\s+/g, ' ').trim().toLowerCase();
 
-  loadData();
+      const found = users.find(u => {
+        let candidate = '';
+        if (Array.isArray(u)) {
+          candidate = u[0];
+        } else if (u && typeof u === 'object') {
+          candidate = u.id ?? u.userId ?? u.employeeId ?? u[0] ?? '';
+        } else {
+          candidate = u;
+        }
+        return normalize(candidate) === normalize(stored);
+      });
+
+      if(found){
+        currentUser = stored;
+        document.getElementById("loginPage").style.display = "none";
+        document.getElementById("dashboard").style.display = "block";
+        loadData();
+      }else{
+        // stored user invalid - clear and show login
+        localStorage.removeItem("user");
+        currentUser = null;
+        document.getElementById("loginPage").style.display = "block";
+        document.getElementById("dashboard").style.display = "none";
+      }
+    })
+    .catch(err => {
+      console.error('Error validating stored user:', err);
+      // fallback: clear stored user to avoid auto-login into invalid session
+      localStorage.removeItem("user");
+      currentUser = null;
+    });
 }
