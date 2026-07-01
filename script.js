@@ -1,4 +1,4 @@
-const API = "https://script.google.com/macros/s/AKfycbzNbXUntOMdd3fXlT-HqUumMMvHOrX47_O_wKNT1a8GKfumBBRJnbRjP6ok2Pxd41OrWQ/exec";
+const API = "https://script.google.com/macros/s/AKfycbyX2ErjjnMXFEM-oZeEkj3GJo3c7IS20R-1v8qJSecf7qT0nHrFKdPDvph0CPkSQSu5FA/exec";
 
 let updates = [];
 let reads = [];
