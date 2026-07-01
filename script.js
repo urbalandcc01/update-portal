@@ -150,7 +150,7 @@ function markRead(el, updateTitle){
 
   const isChecked = el.checked;
   
-  // Update UI immediately
+  // Update UI immediately (optimistic)
   el.parentElement.parentElement.classList.toggle("unread", !isChecked);
   el.parentElement.parentElement.classList.toggle("read", isChecked);
 
@@ -177,22 +177,31 @@ function markRead(el, updateTitle){
       readTime: timestamp
     })
   })
-  .then(res => res.json())
-  .then(data => {
-    console.log('Mark read response:', data);
-    
-    // Update local reads array
+  .then(async res => {
+    // read raw text first to avoid res.json() failing on empty/non-json
+    const text = await res.text();
+    let data = null;
+    try{
+      data = text ? JSON.parse(text) : null;
+    }catch(err){
+      throw new Error('Invalid JSON response from server: ' + text);
+    }
+
+    if(!res.ok || !data || !data.success){
+      const msg = (data && data.error) ? data.error : ('Server error, status ' + res.status);
+      throw new Error(msg);
+    }
+
+    // success: update local reads array
     if(isChecked){
-      // Add to reads
       reads.push([updateTitle, currentUser, timestamp]);
     } else {
-      // Remove from reads
       reads = reads.filter(r => !(r[0] === updateTitle && r[1] === currentUser));
     }
   })
   .catch(error => {
     console.error('Error marking read:', error);
-    alert('Failed to update status. Please try again.');
+    alert('Failed to update status. Please try again.\n' + (error.message || ''));
     // Revert UI on error
     el.checked = !isChecked;
     el.parentElement.parentElement.classList.toggle("unread");
